@@ -13,12 +13,16 @@ export const DB = Symbol('DB');
       provide: DB,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        const ssl = config.get('DATABASE_SSL') === 'true'
+          ? { rejectUnauthorized: false }
+          : undefined;
         const pool = new Pool({
           host: config.get('DATABASE_HOST'),
           port: config.get<number>('DATABASE_PORT'),
           database: config.get('DATABASE_NAME'),
           user: config.get('DATABASE_USER'),
           password: config.get('DATABASE_PASSWORD'),
+          ssl,
         });
         return drizzle(pool, { schema });
       },
