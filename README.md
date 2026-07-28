@@ -4,6 +4,10 @@
 
 Built as a full-stack demonstration of enterprise software patterns: modular NestJS backend, Next.js frontend, JWT authentication, permission-based access control, and event-driven async processing.
 
+**[Live Demo →](https://frontend-flame-ten-32.vercel.app)** | **[API Docs →](https://backend-production-4337.up.railway.app/api/docs)**
+
+Demo credentials: `admin@flowforge.dev` / `Admin@1234`
+
 ---
 
 ## Screenshots
