@@ -6,6 +6,26 @@ Built as a full-stack demonstration of enterprise software patterns: modular Nes
 
 ---
 
+## Screenshots
+
+| Dashboard | Task Inbox |
+|-----------|-----------|
+| ![Dashboard](docs/screenshots/02-dashboard.png) | ![Tasks](docs/screenshots/03-tasks.png) |
+
+| My Requests | Workflow Admin |
+|-------------|---------------|
+| ![Requests](docs/screenshots/04-requests.png) | ![Workflows](docs/screenshots/05-workflows.png) |
+
+| User Management | Reports |
+|-----------------|---------|
+| ![Users](docs/screenshots/06-users.png) | ![Reports](docs/screenshots/07-reports.png) |
+
+| Audit Logs | Login |
+|------------|-------|
+| ![Audit Logs](docs/screenshots/08-audit-logs.png) | ![Login](docs/screenshots/01-login.png) |
+
+---
+
 ## Features
 
 - **Configurable Workflows** — Build multi-step approval chains (e.g. Requester → Supervisor → Finance → Director) without writing code

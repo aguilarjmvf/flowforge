@@ -1,0 +1,19 @@
+{
+  "name": "flowforge",
+  "version": "1.0.0",
+  "description": "**Enterprise workflow automation platform** — digitize and automate business approval processes with configurable multi-step workflows, role-based task assignment, real-time notifications, and a complete audit trail.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "screenshots": "node scripts/take-screenshots.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "playwright": "^1.62.0",
+    "puppeteer": "^24.43.1"
+  }
+}
