@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784998396128,
+      "tag": "0000_lovely_sandman",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785001051341,
+      "tag": "0001_flaky_moon_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785001309287,
+      "tag": "0002_opposite_carmella_unuscione",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785001753413,
+      "tag": "0003_typical_husk",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785002239823,
+      "tag": "0004_unknown_peter_quill",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785002837875,
+      "tag": "0005_natural_smiling_tiger",
+      "breakpoints": true
+    }
+  ]
+}
