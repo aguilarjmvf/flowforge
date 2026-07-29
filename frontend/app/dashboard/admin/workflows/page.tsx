@@ -1,17 +1,28 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge, statusBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { api } from '@/lib/api';
-import type { ApiResponse, Workflow } from '@/types';
+import type { Workflow } from '@/types';
 
 export default function WorkflowsAdminPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const filteredWorkflows = useMemo(() => {
+    const q = search.toLowerCase();
+    return q ? workflows.filter(w =>
+      w.name.toLowerCase().includes(q) ||
+      (w.description ?? '').toLowerCase().includes(q) ||
+      w.status.toLowerCase().includes(q)
+    ) : workflows;
+  }, [workflows, search]);
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: '', description: '' });
@@ -19,7 +30,7 @@ export default function WorkflowsAdminPage() {
 
   function load() {
     setLoading(true);
-    api.get<ApiResponse<Workflow[]>>('/workflows')
+    api.get<import('@/types').ApiResponse<Workflow[]>>('/workflows')
       .then((res) => setWorkflows(res.data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -45,26 +56,37 @@ export default function WorkflowsAdminPage() {
 
   async function handlePublish(id: string) {
     try {
-      await api.patch(`/workflows/${id}/publish`, {});
+      await api.post(`/workflows/${id}/publish`, {});
       load();
-    } catch {}
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to publish workflow.');
+    }
   }
 
   async function handleArchive(id: string) {
     try {
-      await api.patch(`/workflows/${id}/archive`, {});
+      await api.post(`/workflows/${id}/archive`, {});
       load();
-    } catch {}
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to archive workflow.');
+    }
   }
 
   return (
     <div>
       <Header title="Workflows" />
       <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-5">
-          <p className="text-sm text-gray-500">{workflows.length} workflow{workflows.length !== 1 ? 's' : ''}</p>
+        <div className="flex justify-between items-center mb-4">
+          <p className="text-sm text-gray-500">{filteredWorkflows.length} of {workflows.length} workflow{workflows.length !== 1 ? 's' : ''}</p>
           <Button size="sm" onClick={() => setShowCreate(true)}>+ New Workflow</Button>
         </div>
+        <input
+          type="text"
+          placeholder="Search by name, description, or status…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full mb-4 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
 
         {loading ? (
           <div className="space-y-3">
@@ -80,7 +102,7 @@ export default function WorkflowsAdminPage() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {workflows.map((w) => (
+            {filteredWorkflows.map((w) => (
               <Card key={w.id}>
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between gap-4">
@@ -93,6 +115,9 @@ export default function WorkflowsAdminPage() {
                       <p className="text-xs text-gray-400 mt-0.5">Created {new Date(w.createdAt).toLocaleDateString()}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <Link href={`/dashboard/admin/workflows/${w.id}`}>
+                        <Button size="sm" variant="outline">Configure</Button>
+                      </Link>
                       {w.status === 'draft' && (
                         <Button size="sm" variant="success" onClick={() => handlePublish(w.id)}>Publish</Button>
                       )}

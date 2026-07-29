@@ -14,6 +14,7 @@ export const UpdateUserSchema = z.object({
   lastName: z.string().min(1).max(100).optional(),
   departmentId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
+  emailNotifications: z.boolean().optional(),
 });
 
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;

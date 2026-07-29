@@ -38,7 +38,9 @@ Demo credentials: `admin@flowforge.dev` / `Admin@1234`
 - **Task Inbox** — Assignees see pending tasks and can approve, reject, or return requests with comments
 - **Approval History** — Immutable record of every decision made on a request
 - **In-App Notifications** — Real-time alerts on task assignment and status changes
+- **Email Notifications** — Configurable SMTP emails for task assignments and status changes; per-user opt-out toggle
 - **File Attachments** — Attach supporting documents to requests (validated type/size)
+- **User Profile** — Edit name, manage email notification preferences
 - **Audit Trail** — Every significant action logged with user, timestamp, and metadata
 - **Reports & Metrics** — Dashboard with completion rates, department activity, and cycle times
 - **JWT Authentication** — Access + refresh token rotation, argon2id password hashing
@@ -60,8 +62,8 @@ Demo credentials: `admin@flowforge.dev` / `Admin@1234`
 └──────┬─────────────────┬────────┘
        │                 │
 ┌──────▼──────┐   ┌──────▼──────┐
-│ PostgreSQL  │   │    Redis    │
-│  (Drizzle)  │   │  (BullMQ)  │
+│ PostgreSQL  │   │    SMTP     │
+│  (Drizzle)  │   │  (Email)   │
 └─────────────┘   └─────────────┘
 ```
 
@@ -79,6 +81,7 @@ Demo credentials: `admin@flowforge.dev` / `Admin@1234`
 | `tasks` | Task assignment and execution |
 | `approvals` | Immutable decision records |
 | `notifications` | In-app notification delivery |
+| `mail` | SMTP email notifications (nodemailer, graceful no-op when unconfigured) |
 | `attachments` | File upload and authorized download |
 | `audit-logs` | Business and security event trail |
 | `reports` | Metrics and analytics aggregation |
@@ -97,7 +100,8 @@ Demo credentials: `admin@flowforge.dev` / `Admin@1234`
 | ORM | Drizzle ORM |
 | Validation | Zod |
 | Auth | JWT (access + refresh) · argon2id |
-| Queue / Cache | Redis · BullMQ |
+| Email | Nodemailer (SMTP, optional) |
+| Testing | Jest · Vitest · Playwright |
 | Containers | Docker · Docker Compose |
 
 ---
@@ -129,6 +133,8 @@ npm run start:dev
 
 Backend runs at **http://localhost:3000**
 API docs (Swagger) at **http://localhost:3000/api/docs**
+
+> **Email notifications** are optional. Set `SMTP_HOST` in `.env` to enable them. The server starts and functions normally without any SMTP configuration.
 
 ### 3 — Start the frontend
 
@@ -183,6 +189,43 @@ After containers start, run migrations and seed inside the backend container:
 ```bash
 docker exec flowforge-backend node dist/database/seed.js
 ```
+
+---
+
+## Testing
+
+### Backend unit tests (Jest, no database required)
+
+```bash
+cd backend
+npm test
+```
+
+Covers: `AuthService` (login, password hashing, permissions), `WorkflowInstancesService` (transition guards, cancel, submit, reject flow).
+
+### Frontend unit tests (Vitest)
+
+```bash
+cd frontend
+npm test
+```
+
+Covers: API token helpers, `statusBadge` mapping for all workflow statuses.
+
+### End-to-end tests (Playwright)
+
+```bash
+# Install browser binaries once
+npx playwright install chromium
+
+# Run against a local or deployed instance
+PLAYWRIGHT_BASE_URL=https://frontend-flame-ten-32.vercel.app \
+E2E_USER_EMAIL=admin@flowforge.dev \
+E2E_USER_PASSWORD=Admin@1234 \
+npm run test:e2e
+```
+
+Covers: login flow, unauthenticated redirect, My Requests, My Tasks, Admin pages, Profile.
 
 ---
 

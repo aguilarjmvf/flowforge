@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,6 +12,16 @@ import type { ApiResponse, WorkflowInstance } from '@/types';
 export default function RequestsPage() {
   const [instances, setInstances] = useState<WorkflowInstance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return q ? instances.filter(i =>
+      i.title.toLowerCase().includes(q) ||
+      i.referenceNumber.toLowerCase().includes(q) ||
+      i.status.toLowerCase().includes(q)
+    ) : instances;
+  }, [instances, search]);
 
   useEffect(() => {
     api.get<ApiResponse<WorkflowInstance[]>>('/instances?mine=true')
@@ -24,12 +34,19 @@ export default function RequestsPage() {
     <div>
       <Header title="My Requests" />
       <div className="p-6 max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-5">
-          <p className="text-sm text-gray-500">{instances.length} request{instances.length !== 1 ? 's' : ''}</p>
+        <div className="flex justify-between items-center mb-4">
+          <p className="text-sm text-gray-500">{filtered.length} of {instances.length} request{instances.length !== 1 ? 's' : ''}</p>
           <Link href="/dashboard/requests/new">
             <Button size="sm">+ New Request</Button>
           </Link>
         </div>
+        <input
+          type="text"
+          placeholder="Search by title, reference number, or status…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full mb-4 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
 
         {loading ? (
           <div className="space-y-3">
@@ -46,9 +63,15 @@ export default function RequestsPage() {
               </Link>
             </CardContent>
           </Card>
+        ) : filtered.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <p className="text-gray-400 text-sm">No requests match "{search}"</p>
+            </CardContent>
+          </Card>
         ) : (
           <div className="space-y-3">
-            {instances.map((instance) => (
+            {filtered.map((instance) => (
               <Link key={instance.id} href={`/dashboard/requests/${instance.id}`}>
                 <Card className="hover:border-blue-300 transition-colors cursor-pointer">
                   <CardContent className="py-4">

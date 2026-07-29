@@ -1,18 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, statusBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
-import type { ApiResponse, WorkflowInstance, Approval, Form, Attachment } from '@/types';
+import type { ApiResponse, TaskWithContext, WorkflowInstance, Approval, Attachment, Form } from '@/types';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api';
 
+type TransitionAction = 'approve' | 'reject' | 'return';
+
 function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
@@ -22,27 +23,37 @@ function fieldLabel(key: string, form: Form | null) {
   return field?.label ?? key.replace(/_/g, ' ');
 }
 
-export default function RequestDetailPage() {
+export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
+  const [taskCtx, setTaskCtx] = useState<TaskWithContext | null>(null);
   const [instance, setInstance] = useState<WorkflowInstance | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const [form, setForm] = useState<Form | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [form, setForm] = useState<Form | null>(null);
   const [loading, setLoading] = useState(true);
-  const [cancelling, setCancelling] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
+  // action modal state
+  const [action, setAction] = useState<TransitionAction | null>(null);
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [starting, setStarting] = useState(false);
 
   async function load() {
     try {
+      const tasksRes = await api.get<ApiResponse<TaskWithContext[]>>('/tasks/my');
+      const ctx = (tasksRes.data ?? []).find(t => t.task.id === id);
+      if (!ctx) { setNotFound(true); setLoading(false); return; }
+      setTaskCtx(ctx);
+
+      const instanceId = ctx.task.workflowInstanceId;
       const [instRes, apprRes, attRes] = await Promise.all([
-        api.get<ApiResponse<WorkflowInstance>>(`/instances/${id}`),
-        api.get<ApiResponse<Approval[]>>(`/approvals/instance/${id}`),
-        api.get<ApiResponse<Attachment[]>>(`/attachments/instance/${id}`),
+        api.get<ApiResponse<WorkflowInstance>>(`/instances/${instanceId}`),
+        api.get<ApiResponse<Approval[]>>(`/approvals/instance/${instanceId}`),
+        api.get<ApiResponse<Attachment[]>>(`/attachments/instance/${instanceId}`),
       ]);
       const inst = instRes.data ?? null;
       setInstance(inst);
@@ -54,7 +65,7 @@ export default function RequestDetailPage() {
         setForm(formRes.data ?? null);
       }
     } catch {
-      // null check below handles display
+      setNotFound(true);
     } finally {
       setLoading(false);
     }
@@ -62,44 +73,36 @@ export default function RequestDetailPage() {
 
   useEffect(() => { load(); }, [id]);
 
-  async function handleCancel() {
-    if (!confirm('Cancel this request?')) return;
-    setCancelling(true);
+  async function handleStart() {
+    if (!taskCtx) return;
+    setStarting(true);
     try {
-      await api.delete(`/instances/${id}/cancel`);
-      load();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to cancel');
-    } finally {
-      setCancelling(false);
-    }
-  }
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    setUploadError('');
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      await api.upload(`/attachments/instance/${id}`, fd);
+      await api.patch(`/tasks/${id}/start`, {});
       await load();
     } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      alert(err instanceof Error ? err.message : 'Failed to start task');
     } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = '';
+      setStarting(false);
     }
   }
 
-  async function handleDeleteAttachment(attachId: string) {
-    if (!confirm('Delete this attachment?')) return;
+  async function handleTransition() {
+    if (!action || !instance) return;
+    if (action !== 'approve' && !notes.trim()) {
+      setActionError('Notes are required for this action.');
+      return;
+    }
+    setSubmitting(true);
+    setActionError('');
     try {
-      await api.delete(`/attachments/${attachId}`);
-      setAttachments(prev => prev.filter(a => a.id !== attachId));
+      await api.post(`/instances/${instance.id}/transition`, {
+        action,
+        notes: notes.trim() || undefined,
+      });
+      router.push('/dashboard/tasks');
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Delete failed');
+      setActionError(err instanceof Error ? err.message : 'Action failed');
+      setSubmitting(false);
     }
   }
 
@@ -119,17 +122,20 @@ export default function RequestDetailPage() {
     );
   }
 
-  if (!instance) {
+  if (notFound || !taskCtx) {
     return (
       <div>
         <Header />
-        <div className="p-6 text-center text-gray-500">Request not found.</div>
+        <div className="p-6 text-center text-gray-500">Task not found.</div>
       </div>
     );
   }
 
-  const canCancel = ['draft', 'in_progress'].includes(instance.status);
-  const formEntries = instance.formData ? Object.entries(instance.formData) : [];
+  const task = taskCtx.task;
+  const step = taskCtx.step;
+  const isInProgress = task.status === 'in_progress';
+  const isPending = task.status === 'pending';
+  const formEntries = instance?.formData ? Object.entries(instance.formData) : [];
 
   return (
     <div>
@@ -137,31 +143,91 @@ export default function RequestDetailPage() {
       <div className="p-6 max-w-3xl mx-auto space-y-5">
 
         <button onClick={() => router.back()} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-          ← Back
+          ← Back to Tasks
         </button>
 
-        {/* Header card */}
+        {/* Task header */}
         <Card>
           <CardContent className="pt-5 pb-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <Badge variant={statusBadge(instance.status)}>{instance.status.replace('_', ' ')}</Badge>
-                  <span className="text-xs font-mono text-gray-400">{instance.referenceNumber}</span>
+                  <Badge variant={statusBadge(task.status)}>{task.status.replace('_', ' ')}</Badge>
+                  {step && <span className="text-sm text-gray-500">Step: {step.name}</span>}
                 </div>
-                <h2 className="text-xl font-semibold text-gray-900">{instance.title}</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  {instance.submittedAt
-                    ? `Submitted ${new Date(instance.submittedAt).toLocaleString()}`
-                    : `Created ${new Date(instance.createdAt).toLocaleString()}`}
-                </p>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {instance?.title ?? 'Task'}
+                </h2>
+                {instance && (
+                  <p className="text-xs font-mono text-gray-400 mt-0.5">{instance.referenceNumber}</p>
+                )}
+                {task.dueDate && (
+                  <p className="text-sm text-amber-600 mt-1">
+                    Due: {new Date(task.dueDate).toLocaleDateString()}
+                  </p>
+                )}
               </div>
-              {canCancel && (
-                <Button size="sm" variant="danger" loading={cancelling} onClick={handleCancel}>Cancel</Button>
-              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 shrink-0">
+                {isPending && (
+                  <Button size="sm" variant="secondary" onClick={handleStart} loading={starting}>
+                    Start Task
+                  </Button>
+                )}
+                {isInProgress && (
+                  <>
+                    <Button size="sm" variant="success" onClick={() => { setAction('approve'); setNotes(''); setActionError(''); }}>
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => { setAction('return'); setNotes(''); setActionError(''); }}>
+                      Return
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => { setAction('reject'); setNotes(''); setActionError(''); }}>
+                      Reject
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Inline action panel */}
+        {action && (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {action === 'approve' ? 'Approve Request' : action === 'reject' ? 'Reject Request' : 'Return for Revision'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes {action !== 'approve' && <span className="text-red-500">*</span>}
+                </label>
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder={action === 'approve' ? 'Optional comments…' : 'Required — explain your decision'}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {actionError && <p className="text-sm text-red-600">{actionError}</p>}
+              <div className="flex gap-2 justify-end">
+                <Button variant="secondary" onClick={() => setAction(null)}>Cancel</Button>
+                <Button
+                  variant={action === 'approve' ? 'primary' : action === 'reject' ? 'danger' : 'secondary'}
+                  loading={submitting}
+                  onClick={handleTransition}
+                >
+                  {action === 'approve' ? 'Approve' : action === 'reject' ? 'Reject' : 'Return'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Form data */}
         {formEntries.length > 0 && (
@@ -181,23 +247,10 @@ export default function RequestDetailPage() {
         )}
 
         {/* Attachments */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Attachments</CardTitle>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} loading={uploading}>
-                  Upload File
-                </Button>
-                <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {uploadError && <p className="text-sm text-red-600 mb-3">{uploadError}</p>}
-            {attachments.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">No attachments yet.</p>
-            ) : (
+        {attachments.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle>Attachments</CardTitle></CardHeader>
+            <CardContent>
               <ul className="divide-y divide-gray-100">
                 {attachments.map(a => (
                   <li key={a.id} className="py-2.5 flex items-center justify-between gap-4">
@@ -210,41 +263,8 @@ export default function RequestDetailPage() {
                         <p className="text-xs text-gray-400">{formatBytes(a.sizeBytes)}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <a href={downloadUrl(a.id)} target="_blank" rel="noopener noreferrer"
-                        className="text-sm text-blue-600 hover:underline">Download</a>
-                      <button onClick={() => handleDeleteAttachment(a.id)}
-                        className="text-sm text-red-500 hover:text-red-700">Delete</button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Task history */}
-        {instance.tasks && instance.tasks.length > 0 && (
-          <Card>
-            <CardHeader><CardTitle>Task History</CardTitle></CardHeader>
-            <CardContent className="p-0">
-              <ul className="divide-y divide-gray-100">
-                {instance.tasks.map(task => (
-                  <li key={task.id} className="px-6 py-3 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={statusBadge(task.status)}>{task.status.replace('_', ' ')}</Badge>
-                        {task.actionTaken && (
-                          <Badge variant={statusBadge(task.actionTaken)}>{task.actionTaken}</Badge>
-                        )}
-                      </div>
-                      {task.notes && <p className="text-xs text-gray-500 mt-1 italic">"{task.notes}"</p>}
-                    </div>
-                    <span className="text-xs text-gray-400 shrink-0">
-                      {task.completedAt
-                        ? new Date(task.completedAt).toLocaleString()
-                        : new Date(task.createdAt).toLocaleString()}
-                    </span>
+                    <a href={downloadUrl(a.id)} target="_blank" rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:underline shrink-0">Download</a>
                   </li>
                 ))}
               </ul>

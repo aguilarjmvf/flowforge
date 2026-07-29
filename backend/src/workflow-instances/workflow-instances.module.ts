@@ -3,9 +3,10 @@ import { WorkflowInstancesController } from './workflow-instances.controller';
 import { WorkflowInstancesService } from './workflow-instances.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [AuditLogsModule, NotificationsModule],
+  imports: [AuditLogsModule, NotificationsModule, MailModule],
   controllers: [WorkflowInstancesController],
   providers: [WorkflowInstancesService],
   exports: [WorkflowInstancesService],

@@ -58,15 +58,15 @@ export function Sidebar() {
       {/* User */}
       {user && (
         <div className="px-4 py-3 border-t border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-medium">
+          <Link href="/dashboard/profile" className="flex items-center gap-3 group">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-medium group-hover:bg-blue-500 transition-colors">
               {user.firstName?.[0]}{user.lastName?.[0]}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{user.firstName} {user.lastName}</p>
-              <p className="text-xs text-gray-400 truncate">{user.email}</p>
+              <p className="text-xs text-gray-400 truncate">View profile</p>
             </div>
-          </div>
+          </Link>
         </div>
       )}
     </aside>

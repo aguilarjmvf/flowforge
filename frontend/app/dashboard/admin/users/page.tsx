@@ -1,53 +1,129 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { api } from '@/lib/api';
-import type { ApiResponse, UserDetail } from '@/types';
+import type { ApiResponse, UserDetail, Role, Department } from '@/types';
 
 export default function UsersAdminPage() {
   const [users, setUsers] = useState<UserDetail[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const filteredUsers = useMemo(() => {
+    const q = search.toLowerCase();
+    return q ? users.filter(u =>
+      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q)
+    ) : users;
+  }, [users, search]);
+
+  // create modal
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '' });
-  const [error, setError] = useState('');
+  const [createForm, setCreateForm] = useState({ firstName: '', lastName: '', email: '', password: '' });
+  const [createError, setCreateError] = useState('');
 
-  function load() {
+  // manage modal
+  const [managingUser, setManagingUser] = useState<UserDetail | null>(null);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
+  const [selectedDeptId, setSelectedDeptId] = useState('');
+  const [manageSaving, setManageSaving] = useState(false);
+  const [manageError, setManageError] = useState('');
+  const [manageLoading, setManageLoading] = useState(false);
+
+  function loadUsers() {
     setLoading(true);
     api.get<ApiResponse<UserDetail[]>>('/users')
-      .then((res) => setUsers(res.data ?? []))
+      .then(res => setUsers(res.data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    loadUsers();
+    api.get<ApiResponse<Role[]>>('/roles').then(res => setRoles(res.data ?? []));
+    api.get<ApiResponse<Department[]>>('/departments').then(res => setDepartments(res.data ?? []));
+  }, []);
 
   async function handleCreate() {
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim() || !form.password.trim()) {
-      setError('All fields are required.');
+    if (!createForm.firstName.trim() || !createForm.lastName.trim() || !createForm.email.trim() || !createForm.password.trim()) {
+      setCreateError('All fields are required.');
       return;
     }
     setCreating(true);
-    setError('');
+    setCreateError('');
     try {
       await api.post('/users', {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        email: form.email.trim(),
-        password: form.password,
+        firstName: createForm.firstName.trim(),
+        lastName: createForm.lastName.trim(),
+        email: createForm.email.trim(),
+        password: createForm.password,
       });
       setShowCreate(false);
-      setForm({ firstName: '', lastName: '', email: '', password: '' });
-      load();
+      setCreateForm({ firstName: '', lastName: '', email: '', password: '' });
+      loadUsers();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create user');
+      setCreateError(e instanceof Error ? e.message : 'Failed to create user');
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function openManage(user: UserDetail) {
+    setManagingUser(user);
+    setManageError('');
+    setSelectedDeptId(user.departmentId ?? '');
+    setManageLoading(true);
+    try {
+      // Fetch user's current roles via their detail — backend returns roles on the user object
+      // We re-fetch the user to get latest departmentId too
+      const res = await api.get<ApiResponse<UserDetail & { roles?: { id: string }[] }>>(`/users/${user.id}`);
+      const detail = res.data;
+      const currentRoleIds = new Set<string>((detail?.roles ?? []).map((r: { id: string }) => r.id));
+      setSelectedRoleIds(currentRoleIds);
+      if (detail?.departmentId != null) setSelectedDeptId(detail.departmentId);
+    } catch {
+      setSelectedRoleIds(new Set());
+    } finally {
+      setManageLoading(false);
+    }
+  }
+
+  function toggleRole(roleId: string) {
+    setSelectedRoleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(roleId)) next.delete(roleId);
+      else next.add(roleId);
+      return next;
+    });
+  }
+
+  async function saveManage() {
+    if (!managingUser) return;
+    setManageSaving(true);
+    setManageError('');
+    try {
+      await Promise.all([
+        api.patch(`/users/${managingUser.id}`, {
+          departmentId: selectedDeptId || null,
+        }),
+        api.post(`/users/${managingUser.id}/roles`, {
+          roleIds: Array.from(selectedRoleIds),
+        }),
+      ]);
+      loadUsers();
+      setManagingUser(null);
+    } catch (e: unknown) {
+      setManageError(e instanceof Error ? e.message : 'Failed to save changes');
+    } finally {
+      setManageSaving(false);
     }
   }
 
@@ -55,10 +131,17 @@ export default function UsersAdminPage() {
     <div>
       <Header title="Users" />
       <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-5">
-          <p className="text-sm text-gray-500">{users.length} user{users.length !== 1 ? 's' : ''}</p>
+        <div className="flex justify-between items-center mb-4">
+          <p className="text-sm text-gray-500">{filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}</p>
           <Button size="sm" onClick={() => setShowCreate(true)}>+ Invite User</Button>
         </div>
+        <input
+          type="text"
+          placeholder="Search by name or email…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full mb-4 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
 
         {loading ? (
           <div className="space-y-3">
@@ -80,10 +163,11 @@ export default function UsersAdminPage() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Joined</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {users.map((u) => (
+                {filteredUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -101,6 +185,11 @@ export default function UsersAdminPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-gray-400">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Button size="sm" variant="outline" onClick={() => openManage(u)}>
+                        Manage
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -109,6 +198,7 @@ export default function UsersAdminPage() {
         )}
       </div>
 
+      {/* Create User Modal */}
       {showCreate && (
         <Modal title="Invite User" onClose={() => setShowCreate(false)}>
           <div className="space-y-4">
@@ -117,8 +207,8 @@ export default function UsersAdminPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
                 <input
                   type="text"
-                  value={form.firstName}
-                  onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
+                  value={createForm.firstName}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, firstName: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -126,8 +216,8 @@ export default function UsersAdminPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
                 <input
                   type="text"
-                  value={form.lastName}
-                  onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
+                  value={createForm.lastName}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, lastName: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -136,8 +226,8 @@ export default function UsersAdminPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
               <input
                 type="email"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                value={createForm.email}
+                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -145,17 +235,81 @@ export default function UsersAdminPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-red-500">*</span></label>
               <input
                 type="password"
-                value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                value={createForm.password}
+                onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {createError && <p className="text-sm text-red-600">{createError}</p>}
             <div className="flex gap-2 justify-end">
               <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
               <Button loading={creating} onClick={handleCreate}>Create User</Button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Manage User Modal */}
+      {managingUser && (
+        <Modal
+          title={`Manage — ${managingUser.firstName} ${managingUser.lastName}`}
+          onClose={() => setManagingUser(null)}
+          className="max-w-lg"
+        >
+          {manageLoading ? (
+            <div className="py-8 text-center text-sm text-gray-400">Loading...</div>
+          ) : (
+            <div className="space-y-5">
+              {/* Department */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={selectedDeptId}
+                  onChange={e => setSelectedDeptId(e.target.value)}
+                >
+                  <option value="">— No department —</option>
+                  {departments.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Roles */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Roles</p>
+                {roles.length === 0 ? (
+                  <p className="text-sm text-gray-400">No roles available.</p>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto space-y-1.5 border border-gray-200 rounded-lg p-3">
+                    {roles.map(r => (
+                      <label key={r.id} className="flex items-center gap-2.5 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          className="rounded"
+                          checked={selectedRoleIds.has(r.id)}
+                          onChange={() => toggleRole(r.id)}
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-800 group-hover:text-blue-600">{r.name}</span>
+                          {r.description && <p className="text-xs text-gray-400">{r.description}</p>}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {manageError && <p className="text-sm text-red-600">{manageError}</p>}
+              <div className="flex items-center justify-between pt-2 border-t">
+                <span className="text-sm text-gray-500">{selectedRoleIds.size} role{selectedRoleIds.size !== 1 ? 's' : ''} selected</span>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => setManagingUser(null)}>Cancel</Button>
+                  <Button onClick={saveManage} loading={manageSaving}>Save Changes</Button>
+                </div>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
     </div>

@@ -8,6 +8,7 @@ import * as schema from '../database/schema';
 import { CreateInstanceDto, UpdateInstanceDto, ExecuteTransitionDto } from './dto/workflow-instances.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class WorkflowInstancesService {
@@ -15,6 +16,7 @@ export class WorkflowInstancesService {
     @Inject(DB) private db: NodePgDatabase<typeof schema>,
     private readonly auditLogs: AuditLogsService,
     private readonly notifications: NotificationsService,
+    private readonly mail: MailService,
   ) {}
 
   // ── List / Get ────────────────────────────────────────────────────────────────
@@ -392,12 +394,18 @@ export class WorkflowInstancesService {
     return `${prefix}-${year}-${seq}`;
   }
 
+  private async getUser(userId: string): Promise<schema.User | null> {
+    const [user] = await this.db.select().from(schema.users).where(eq(schema.users.id, userId));
+    return user ?? null;
+  }
+
   private async notifyTaskAssignee(
     instanceId: string,
     step: schema.WorkflowStep,
     referenceNumber: string,
   ): Promise<void> {
     if (!step.assignedUserId) return;
+
     await this.notifications.create({
       userId: step.assignedUserId,
       type: 'task_assigned',
@@ -406,6 +414,16 @@ export class WorkflowInstancesService {
       entityType: 'workflow_instance',
       entityId: instanceId,
     });
+
+    const user = await this.getUser(step.assignedUserId);
+    if (user?.emailNotifications) {
+      void this.mail.taskAssigned(
+        user.email,
+        `${user.firstName} ${user.lastName}`,
+        referenceNumber,
+        step.name,
+      );
+    }
   }
 
   private async notifySubmitter(
@@ -421,6 +439,7 @@ export class WorkflowInstancesService {
       workflow_returned: 'Request Returned',
       workflow_completed: 'Request Completed',
     };
+
     await this.notifications.create({
       userId: submittedBy,
       type,
@@ -429,5 +448,27 @@ export class WorkflowInstancesService {
       entityType: 'workflow_instance',
       entityId: instanceId,
     });
+
+    const user = await this.getUser(submittedBy);
+    if (user?.emailNotifications) {
+      const colorMap = {
+        workflow_approved: '#16a34a',
+        workflow_rejected: '#dc2626',
+        workflow_returned: '#d97706',
+        workflow_completed: '#2563eb',
+      };
+      const [instance] = await this.db
+        .select()
+        .from(schema.workflowInstances)
+        .where(eq(schema.workflowInstances.id, instanceId));
+      void this.mail.workflowStatusChanged(
+        user.email,
+        `${user.firstName} ${user.lastName}`,
+        referenceNumber,
+        instance?.title ?? referenceNumber,
+        titleMap[type].replace('Request ', ''),
+        colorMap[type],
+      );
+    }
   }
 }

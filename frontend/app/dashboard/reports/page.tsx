@@ -5,40 +5,33 @@ import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge, statusBadge } from '@/components/ui/badge';
 import { api } from '@/lib/api';
-import type { ApiResponse, DashboardMetrics } from '@/types';
+import type { ApiResponse, DashboardMetrics, WorkflowInstance } from '@/types';
 
-interface InstanceSummary {
-  id: string;
-  referenceNumber: string;
-  title: string;
-  status: string;
-  submittedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-}
-
-interface DeptActivity {
-  departmentName: string;
-  submittedCount: number;
-  completedCount: number;
+interface DeptStats {
+  deptId: string;
+  completed: number;
+  pending: number;
 }
 
 export default function ReportsPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [instances, setInstances] = useState<InstanceSummary[]>([]);
-  const [depts, setDepts] = useState<DeptActivity[]>([]);
+  const [instances, setInstances] = useState<WorkflowInstance[]>([]);
+  const [depts, setDepts] = useState<DeptStats[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.get<ApiResponse<DashboardMetrics>>('/reports/dashboard'),
-      api.get<ApiResponse<InstanceSummary[]>>('/reports/instances'),
-      api.get<ApiResponse<DeptActivity[]>>('/reports/departments'),
+      api.get<ApiResponse<WorkflowInstance[]>>('/instances'),
+      api.get<ApiResponse<Record<string, { completed: number; pending: number }>>>('/reports/departments'),
     ])
       .then(([m, i, d]) => {
         setMetrics(m.data ?? null);
-        setInstances(i.data ?? []);
-        setDepts(d.data ?? []);
+        setInstances(Array.isArray(i.data) ? i.data : []);
+        const deptObj = d.data ?? {};
+        setDepts(
+          Object.entries(deptObj).map(([id, stats]) => ({ deptId: id, ...stats }))
+        );
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -81,29 +74,20 @@ export default function ReportsPage() {
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Department</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Submitted</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-600">Completed</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Completion Rate</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-600">Pending</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {depts.map((d, i) => {
-                      const rate = d.submittedCount > 0
-                        ? Math.round((d.completedCount / d.submittedCount) * 100)
-                        : 0;
-                      return (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-gray-900">{d.departmentName}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">{d.submittedCount}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">{d.completedCount}</td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={rate >= 70 ? 'text-green-600 font-medium' : rate >= 40 ? 'text-yellow-600 font-medium' : 'text-red-600 font-medium'}>
-                              {rate}%
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {depts.map((d, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900 capitalize">
+                          {d.deptId === 'unassigned' ? 'Unassigned' : d.deptId}
+                        </td>
+                        <td className="px-4 py-3 text-right text-green-700 font-medium">{d.completed}</td>
+                        <td className="px-4 py-3 text-right text-yellow-700 font-medium">{d.pending}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -111,7 +95,7 @@ export default function ReportsPage() {
           </section>
         )}
 
-        {/* Recent instances */}
+        {/* All requests */}
         <section>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">All Requests</h2>
           {loading ? (

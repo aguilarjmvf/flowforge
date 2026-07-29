@@ -7,7 +7,91 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
-import type { ApiResponse, Workflow, Form, FormField } from '@/types';
+import type { ApiResponse, Workflow, Form, FormField, FormFieldOption } from '@/types';
+
+function FieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: FormField;
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const options = (field.options ?? []) as FormFieldOption[];
+  const cls =
+    'block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500';
+
+  switch (field.fieldType) {
+    case 'long_text':
+      return (
+        <textarea rows={3} required={field.isRequired}
+          placeholder={field.placeholder ?? ''} value={value}
+          onChange={e => onChange(e.target.value)} className={cls} />
+      );
+
+    case 'dropdown':
+      return (
+        <select required={field.isRequired} value={value}
+          onChange={e => onChange(e.target.value)} className={cls}>
+          <option value="">Select…</option>
+          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      );
+
+    case 'radio':
+      return (
+        <div className="space-y-1.5 mt-1">
+          {options.map(o => (
+            <label key={o.value} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="radio" name={field.fieldKey} value={o.value}
+                checked={value === o.value} onChange={() => onChange(o.value)} />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      );
+
+    case 'checkbox': {
+      const selected = value ? value.split(',') : [];
+      return (
+        <div className="space-y-1.5 mt-1">
+          {options.map(o => (
+            <label key={o.value} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={selected.includes(o.value)}
+                onChange={() => {
+                  const next = selected.includes(o.value)
+                    ? selected.filter(v => v !== o.value)
+                    : [...selected, o.value];
+                  onChange(next.join(','));
+                }} />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      );
+    }
+
+    case 'number':
+    case 'currency':
+      return <input type="number" required={field.isRequired}
+        placeholder={field.placeholder ?? ''} value={value}
+        onChange={e => onChange(e.target.value)} className={cls} />;
+
+    case 'date':
+      return <input type="date" required={field.isRequired} value={value}
+        onChange={e => onChange(e.target.value)} className={cls} />;
+
+    case 'datetime':
+      return <input type="datetime-local" required={field.isRequired} value={value}
+        onChange={e => onChange(e.target.value)} className={cls} />;
+
+    default:
+      return <input type="text" required={field.isRequired}
+        placeholder={field.placeholder ?? ''} value={value}
+        onChange={e => onChange(e.target.value)} className={cls} />;
+  }
+}
 
 export default function NewRequestPage() {
   const router = useRouter();
@@ -31,33 +115,45 @@ export default function NewRequestPage() {
     }).catch(() => {});
   }, []);
 
+  // auto-select linked form when workflow changes
   useEffect(() => {
-    if (!selectedForm) { setFormFields([]); return; }
+    if (!selectedWorkflow) return;
+    const linked = forms.find(f => f.workflowId === selectedWorkflow);
+    if (linked) setSelectedForm(linked.id);
+  }, [selectedWorkflow, forms]);
+
+  // load fields when form changes
+  useEffect(() => {
+    if (!selectedForm) { setFormFields([]); setFormData({}); return; }
     api.get<ApiResponse<Form>>(`/forms/${selectedForm}`)
-      .then((res) => setFormFields(res.data?.fields ?? []))
+      .then(res => {
+        const fields = (res.data?.fields ?? []).sort((a, b) => a.displayOrder - b.displayOrder);
+        setFormFields(fields);
+        const defaults: Record<string, string> = {};
+        fields.forEach(f => { if (f.defaultValue) defaults[f.fieldKey] = f.defaultValue; });
+        setFormData(defaults);
+      })
       .catch(() => {});
   }, [selectedForm]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedWorkflow || !title) return;
+    if (!selectedWorkflow || !title.trim()) return;
     setSubmitting(true);
     setError('');
     try {
       const res = await api.post<ApiResponse<{ id: string }>>('/instances', {
         workflowId: selectedWorkflow,
         formId: selectedForm || undefined,
-        title,
+        title: title.trim(),
         formData,
       });
       const instanceId = res.data?.id;
       if (!instanceId) throw new Error('Failed to create request');
-
-      // Auto-submit
       await api.post(`/instances/${instanceId}/submit`);
       router.push(`/dashboard/requests/${instanceId}`);
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to create request');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to submit request');
       setSubmitting(false);
     }
   }
@@ -72,78 +168,39 @@ export default function NewRequestPage() {
             <CardContent className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Workflow *</label>
-                <select
-                  value={selectedWorkflow}
-                  onChange={(e) => setSelectedWorkflow(e.target.value)}
-                  required
-                  className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                >
+                <select value={selectedWorkflow} onChange={e => setSelectedWorkflow(e.target.value)} required
+                  className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
                   <option value="">Select a workflow…</option>
-                  {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  {workflows.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Form (optional)</label>
-                <select
-                  value={selectedForm}
-                  onChange={(e) => setSelectedForm(e.target.value)}
-                  className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                >
+                <label className="text-sm font-medium text-gray-700 block mb-1">Form</label>
+                <select value={selectedForm} onChange={e => setSelectedForm(e.target.value)}
+                  className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
                   <option value="">No form</option>
-                  {forms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  {forms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
               </div>
 
-              <Input
-                id="title"
-                label="Request Title *"
-                placeholder="e.g. Purchase Request for Office Supplies"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-              />
+              <Input label="Request Title *" placeholder="e.g. Purchase Request for Office Supplies"
+                value={title} onChange={e => setTitle(e.target.value)} required />
             </CardContent>
           </Card>
 
           {formFields.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>Form Data</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Form</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                {formFields.map((field) => (
+                {formFields.map(field => (
                   <div key={field.id}>
                     <label className="text-sm font-medium text-gray-700 block mb-1">
-                      {field.label}{field.isRequired && ' *'}
+                      {field.label}
+                      {field.isRequired && <span className="text-red-500 ml-0.5">*</span>}
                     </label>
-                    {field.fieldType === 'long_text' ? (
-                      <textarea
-                        rows={3}
-                        required={field.isRequired}
-                        placeholder={field.defaultValue ?? ''}
-                        value={formData[field.fieldKey] ?? ''}
-                        onChange={(e) => setFormData((p) => ({ ...p, [field.fieldKey]: e.target.value }))}
-                        className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    ) : field.fieldType === 'dropdown' && Array.isArray(field.options) ? (
-                      <select
-                        required={field.isRequired}
-                        value={formData[field.fieldKey] ?? ''}
-                        onChange={(e) => setFormData((p) => ({ ...p, [field.fieldKey]: e.target.value }))}
-                        className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Select…</option>
-                        {(field.options as string[]).map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    ) : (
-                      <input
-                        type={field.fieldType === 'number' || field.fieldType === 'currency' ? 'number' : field.fieldType === 'date' ? 'date' : 'text'}
-                        required={field.isRequired}
-                        placeholder={field.defaultValue ?? ''}
-                        value={formData[field.fieldKey] ?? ''}
-                        onChange={(e) => setFormData((p) => ({ ...p, [field.fieldKey]: e.target.value }))}
-                        className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    )}
+                    <FieldInput field={field} value={formData[field.fieldKey] ?? ''}
+                      onChange={val => setFormData(p => ({ ...p, [field.fieldKey]: val }))} />
                   </div>
                 ))}
               </CardContent>

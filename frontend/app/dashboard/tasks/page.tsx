@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,7 @@ type TransitionAction = 'approve' | 'reject' | 'return';
 export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskWithContext[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<TaskWithContext | null>(null);
   const [action, setAction] = useState<TransitionAction>('approve');
   const [notes, setNotes] = useState('');
@@ -59,13 +60,31 @@ export default function TasksPage() {
     }
   }
 
-  const pending = tasks.filter((t) => t.task.status === 'pending');
-  const inProgress = tasks.filter((t) => t.task.status === 'in_progress');
+  const filteredTasks = useMemo(() => {
+    const q = search.toLowerCase();
+    return q ? tasks.filter(t =>
+      t.instance?.title.toLowerCase().includes(q) ||
+      t.instance?.referenceNumber.toLowerCase().includes(q) ||
+      t.step?.name.toLowerCase().includes(q)
+    ) : tasks;
+  }, [tasks, search]);
+
+  const pending = filteredTasks.filter((t) => t.task.status === 'pending');
+  const inProgress = filteredTasks.filter((t) => t.task.status === 'in_progress');
 
   return (
     <div>
       <Header title="My Tasks" />
       <div className="p-6 max-w-4xl mx-auto">
+        {!loading && tasks.length > 0 && (
+          <input
+            type="text"
+            placeholder="Search by title, reference, or step…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full mb-5 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
         {loading ? (
           <div className="space-y-3">
             {[...Array(3)].map((_, i) => <Card key={i}><CardContent className="h-24 animate-pulse bg-gray-50" /></Card>)}
@@ -162,7 +181,7 @@ function TaskCard({
             </div>
             {t.instance ? (
               <>
-                <Link href={`/dashboard/requests/${t.instance.id}`} className="font-medium text-gray-900 hover:text-blue-600 truncate block">
+                <Link href={`/dashboard/tasks/${t.task.id}`} className="font-medium text-gray-900 hover:text-blue-600 truncate block">
                   {t.instance.title}
                 </Link>
                 <p className="text-xs text-gray-400 mt-0.5 font-mono">{t.instance.referenceNumber}</p>

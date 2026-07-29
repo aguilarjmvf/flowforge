@@ -13,6 +13,7 @@ export const users = pgTable('users', {
   isActive: boolean('is_active').notNull().default(true),
   isEmailVerified: boolean('is_email_verified').notNull().default(false),
   isSuperAdmin: boolean('is_super_admin').notNull().default(false),
+  emailNotifications: boolean('email_notifications').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

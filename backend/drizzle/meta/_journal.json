@@ -43,6 +43,13 @@
       "when": 1785002837875,
       "tag": "0005_natural_smiling_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1753660800000,
+      "tag": "0006_email_notifications",
+      "breakpoints": true
     }
   ]
 }

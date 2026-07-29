@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -80,10 +81,17 @@ export default function FormsAdminPage() {
               return (
                 <Card key={f.id}>
                   <CardContent className="py-4">
-                    <p className="font-medium text-gray-900">{f.name}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {linked ? `Linked to: ${linked.name}` : 'Not linked to a workflow'}
-                    </p>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900">{f.name}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {linked ? `Linked to: ${linked.name}` : 'Not linked to a workflow'}
+                        </p>
+                      </div>
+                      <Link href={`/dashboard/admin/forms/${f.id}`}>
+                        <Button size="sm" variant="outline">Edit Fields</Button>
+                      </Link>
+                    </div>
                   </CardContent>
                 </Card>
               );
