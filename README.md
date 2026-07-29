@@ -4,7 +4,7 @@
 
 Built as a full-stack demonstration of enterprise software patterns: modular NestJS backend, Next.js frontend, JWT authentication, permission-based access control, and event-driven async processing.
 
-**[Live Demo →](https://frontend-flame-ten-32.vercel.app)** | **[API Docs →](https://backend-production-4337.up.railway.app/api/docs)**
+**[Live Demo →](https://flowforge-platform.vercel.app)** | **[API Docs →](https://backend-production-4337.up.railway.app/api/docs)**
 
 Demo credentials: `admin@flowforge.dev` / `Admin@1234`
 
@@ -219,7 +219,7 @@ Covers: API token helpers, `statusBadge` mapping for all workflow statuses.
 npx playwright install chromium
 
 # Run against a local or deployed instance
-PLAYWRIGHT_BASE_URL=https://frontend-flame-ten-32.vercel.app \
+PLAYWRIGHT_BASE_URL=https://flowforge-platform.vercel.app \
 E2E_USER_EMAIL=admin@flowforge.dev \
 E2E_USER_PASSWORD=Admin@1234 \
 npm run test:e2e
